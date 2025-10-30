@@ -3,6 +3,7 @@
 //  WWW Portal
 //
 //  Dynamic DNS update service supporting multiple providers
+//  2025 OCT 30 1356
 //
 
 import Foundation
@@ -24,9 +25,13 @@ class DDNSService: ObservableObject {
     }
     
     func startUpdating() {
-        guard configuration.ddnsEnabled else { return }
+        guard configuration.ddnsEnabled else {
+            DebugLogger.shared.warning("DDNS disabled - not starting updates")
+            return
+        }
         
         isEnabled = true
+        DebugLogger.shared.success("DDNS service started - provider: \(configuration.ddnsProvider.rawValue)")
         
         // Immediate update
         Task {
@@ -35,6 +40,8 @@ class DDNSService: ObservableObject {
         
         // Schedule periodic updates
         let interval = TimeInterval(configuration.ddnsUpdateInterval * 60)
+        DebugLogger.shared.info("DDNS update interval: \(configuration.ddnsUpdateInterval) minutes")
+        
         updateTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 await self?.performUpdate()
@@ -46,40 +53,55 @@ class DDNSService: ObservableObject {
         updateTimer?.invalidate()
         updateTimer = nil
         isEnabled = false
+        DebugLogger.shared.warning("DDNS service stopped")
     }
     
     func performUpdate() async {
+        DebugLogger.shared.info("DDNS update starting for domain: \(configuration.ddnsDomain)")
+        
         let urlString = buildUpdateURL()
+        DebugLogger.shared.info("DDNS update URL: \(urlString)")
         
         guard let url = URL(string: urlString) else {
             lastUpdateStatus = "Invalid URL"
+            DebugLogger.shared.error("DDNS update failed - invalid URL: \(urlString)")
             return
         }
         
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
             
-            if let httpResponse = response as? HTTPURLResponse,
-               httpResponse.statusCode == 200 {
-                lastUpdateTime = Date()
-                lastUpdateStatus = "Success"
+            if let httpResponse = response as? HTTPURLResponse {
+                DebugLogger.shared.info("DDNS HTTP response code: \(httpResponse.statusCode)")
                 
-                // Try to extract IP from response
-                if let responseString = String(data: data, encoding: .utf8) {
-                    parseIPFromResponse(responseString)
+                if httpResponse.statusCode == 200 {
+                    lastUpdateTime = Date()
+                    lastUpdateStatus = "Success"
+                    
+                    // Try to extract IP from response
+                    if let responseString = String(data: data, encoding: .utf8) {
+                        DebugLogger.shared.info("DDNS response: \(responseString)")
+                        parseIPFromResponse(responseString)
+                        DebugLogger.shared.success("DDNS updated successfully - IP: \(currentIP)")
+                    } else {
+                        DebugLogger.shared.success("DDNS updated successfully")
+                    }
+                } else {
+                    lastUpdateStatus = "HTTP \(httpResponse.statusCode)"
+                    DebugLogger.shared.error("DDNS update failed - HTTP status: \(httpResponse.statusCode)")
                 }
-            } else {
-                lastUpdateStatus = "Failed"
             }
         } catch {
             lastUpdateStatus = "Error: \(error.localizedDescription)"
+            DebugLogger.shared.error("DDNS update error: \(error.localizedDescription)")
         }
     }
     
     private func buildUpdateURL() -> String {
         switch configuration.ddnsProvider {
         case .duckDNS:
-            return "https://www.duckdns.org/update?domains=\(configuration.ddnsDomain)&token=\(configuration.ddnsToken)"
+            // DuckDNS API: https://www.duckdns.org/update?domains=DOMAIN&token=TOKEN&ip=
+            return "https://www.duckdns.org/update?domains=\(configuration.ddnsDomain)&token=\(configuration.ddnsToken)&ip="
             
         case .noIP:
             return "https://dynupdate.no-ip.com/nic/update?hostname=\(configuration.ddnsDomain)"
@@ -96,10 +118,14 @@ class DDNSService: ObservableObject {
     }
     
     private func parseIPFromResponse(_ response: String) {
-        // DuckDNS returns: "OK\n1.2.3.4" or just "OK"
-        let lines = response.split(separator: "\n")
-        if lines.count > 1 {
-            currentIP = String(lines[1])
+        // DuckDNS returns: "OK" or "KO"
+        // Some providers return IP in response
+        if response.contains("OK") {
+            // Try to extract IP from response if present
+            let lines = response.split(separator: "\n")
+            if lines.count > 1 {
+                currentIP = String(lines[1])
+            }
         }
     }
     
@@ -109,7 +135,10 @@ class DDNSService: ObservableObject {
             stopUpdating()
         }
         configuration = newConfig
-        if wasEnabled && newConfig.ddnsEnabled {
+        DebugLogger.shared.info("DDNS configuration updated")
+        
+        // Start if the NEW config has DDNS enabled (not just if it WAS enabled)
+        if newConfig.ddnsEnabled {
             startUpdating()
         }
     }

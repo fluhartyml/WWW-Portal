@@ -2,15 +2,8 @@
 //  ServerControlPanel.swift
 //  WWW Portal
 //
-//  Created by Michael Fluharty on 10/30/25.
-//
-
-
-//
-//  ServerControlPanel.swift
-//  WWW Portal
-//
 //  Server start/stop control and status display panel
+//  2025 OCT 30 1425
 //
 
 import SwiftUI

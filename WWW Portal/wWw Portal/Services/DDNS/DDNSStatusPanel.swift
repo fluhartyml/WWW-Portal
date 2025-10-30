@@ -2,6 +2,14 @@
 //  DDNSStatusPanel.swift
 //  WWW Portal
 //
+//  Created by Michael Fluharty on 10/30/25.
+//
+
+
+//
+//  DDNSStatusPanel.swift
+//  WWW Portal
+//
 //  Dynamic DNS status and control panel
 //  2025 OCT 30 1153
 //
